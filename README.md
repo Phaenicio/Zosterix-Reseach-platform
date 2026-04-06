@@ -1,6 +1,6 @@
-# OlaLeafNet
+# Zosterix
 
-**OlaLeafNet** — A Global Platform for Researchers to Blog, Connect, and Collaborate.
+**Zosterix** — A Global Platform for Researchers to Blog, Connect, and Collaborate.
 
 Welcome to the main repository for OlaLeafNet. This project is a full-stack platform designed to facilitate collaboration, connection, and idea sharing among researchers worldwide.
 
