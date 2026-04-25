@@ -12,9 +12,9 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
-	"olaleafnet-backend/internal/auth"
-	"olaleafnet-backend/internal/middleware"
-	"olaleafnet-backend/internal/shared"
+	"zosterix-backend/internal/auth"
+	"zosterix-backend/internal/middleware"
+	"zosterix-backend/internal/shared"
 )
 
 func main() {

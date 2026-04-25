@@ -22,15 +22,20 @@ func LoadConfig() Config {
 		port = "8080"
 	}
 
+	appURL := os.Getenv("APP_URL")
+	if appURL == "" {
+		appURL = "http://localhost:5173"
+	}
+
 	return Config{
 		Port:             port,
 		DatabaseURL:      os.Getenv("DATABASE_URL"),
 		RedisURL:         os.Getenv("REDIS_URL"),
 		JWTSecret:        os.Getenv("JWT_SECRET"),
 		JWTRefreshSecret: os.Getenv("JWT_REFRESH_SECRET"),
-		AppURL:           os.Getenv("APP_URL"),
+		AppURL:           appURL,
 		APIURL:           os.Getenv("API_URL"),
-		FrontendOrigin:   os.Getenv("APP_URL"),
+		FrontendOrigin:   appURL,
 	}
 }
 

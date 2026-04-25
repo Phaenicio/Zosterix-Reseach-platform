@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"olaleafnet-backend/internal/shared"
+	"zosterix-backend/internal/shared"
 )
 
 func CSRFMiddleware() gin.HandlerFunc {

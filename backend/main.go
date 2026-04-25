@@ -22,7 +22,7 @@ func main() {
 	r.GET("/api/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status": "up",
-			"message": "OlaLeafNet API is running gracefully!",
+			"message": "Zosterix API is running gracefully!",
 		})
 	})
 

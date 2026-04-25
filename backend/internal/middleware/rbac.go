@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"olaleafnet-backend/internal/shared"
+	"zosterix-backend/internal/shared"
 )
 
 func RequireRoles(roles ...string) gin.HandlerFunc {

@@ -1,4 +1,4 @@
-module olaleafnet-backend
+module zosterix-backend
 
 go 1.26.1
 
