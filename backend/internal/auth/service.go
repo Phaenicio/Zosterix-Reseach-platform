@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -75,7 +76,9 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) error {
 		FullName:         strings.TrimSpace(req.FullName),
 		Role:             req.Role,
 		SupervisorStatus: svStatus,
-		EmailVerified:    false,
+		EmailVerified:         false,
+		NotificationsEnabled:  true,
+		NotificationsPriority: "medium",
 	}
 
 	if err := s.repo.CreateUser(ctx, user); err != nil {
@@ -96,7 +99,9 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) error {
 		return err
 	}
 
-	s.redis.Set(ctx, fmt.Sprintf("zosterix:unverified_delete:%s", user.ID), "", 7*24*time.Hour)
+	if err := s.redis.Set(ctx, fmt.Sprintf("zosterix:unverified_delete:%s", user.ID), "", 7*24*time.Hour).Err(); err != nil {
+		log.Warn().Err(err).Msg("failed to set unverified_delete in redis")
+	}
 	_ = s.email.SendVerificationEmail(user.Email, user.FullName, rawToken)
 
 	return nil
@@ -117,7 +122,9 @@ func (s *Service) VerifyEmail(ctx context.Context, rawToken string) error {
 		return err
 	}
 
-	s.redis.Del(ctx, fmt.Sprintf("zosterix:unverified_delete:%s", token.UserID))
+	if err := s.redis.Del(ctx, fmt.Sprintf("zosterix:unverified_delete:%s", token.UserID)).Err(); err != nil {
+		log.Warn().Err(err).Msg("failed to delete unverified_delete from redis")
+	}
 	return nil
 }
 
@@ -153,8 +160,11 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, st
 	}
 
 	// Track refresh tokens for revocation
-	s.redis.SAdd(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", user.ID), jti)
-	s.redis.Expire(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", user.ID), 30*24*time.Hour)
+	if err := s.redis.SAdd(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", user.ID), jti).Err(); err != nil {
+		log.Warn().Err(err).Msg("failed to track refresh token in redis")
+	} else {
+		s.redis.Expire(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", user.ID), 30*24*time.Hour)
+	}
 
 	profileComplete, _ := s.repo.IsProfileComplete(ctx, user.ID)
 
@@ -168,8 +178,10 @@ func (s *Service) RefreshToken(ctx context.Context, oldRefreshToken string) (str
 	}
 
 	// Check blocklist
-	blocked, _ := s.redis.Exists(ctx, fmt.Sprintf("zosterix:blocklist:refresh:%s", claims.JTI)).Result()
-	if blocked > 0 {
+	blocked, err := s.redis.Exists(ctx, fmt.Sprintf("zosterix:blocklist:refresh:%s", claims.JTI)).Result()
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to check blocklist in redis")
+	} else if blocked > 0 {
 		return "", "", nil, false, ErrSessionRevoked
 	}
 
@@ -192,7 +204,9 @@ func (s *Service) RefreshToken(ctx context.Context, oldRefreshToken string) (str
 
 	// Blocklist old token
 	remaining := time.Until(claims.ExpiresAt.Time)
-	s.redis.Set(ctx, fmt.Sprintf("zosterix:blocklist:refresh:%s", claims.JTI), "", remaining)
+	if err := s.redis.Set(ctx, fmt.Sprintf("zosterix:blocklist:refresh:%s", claims.JTI), "", remaining).Err(); err != nil {
+		log.Warn().Err(err).Msg("failed to blocklist old token in redis")
+	}
 	s.redis.SRem(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", user.ID), claims.JTI)
 	s.redis.SAdd(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", user.ID), newJTI)
 
@@ -212,7 +226,9 @@ func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 		remaining = 1 * time.Second
 	}
 
-	s.redis.Set(ctx, fmt.Sprintf("zosterix:blocklist:refresh:%s", claims.JTI), "", remaining)
+	if err := s.redis.Set(ctx, fmt.Sprintf("zosterix:blocklist:refresh:%s", claims.JTI), "", remaining).Err(); err != nil {
+		log.Warn().Err(err).Msg("failed to blocklist token on logout in redis")
+	}
 	s.redis.SRem(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", claims.UserID), claims.JTI)
 
 	return nil
@@ -265,11 +281,15 @@ func (s *Service) ResetPassword(ctx context.Context, rawToken, newPassword strin
 	}
 
 	// Revoke all sessions
-	jtis, _ := s.redis.SMembers(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", token.UserID)).Result()
-	for _, jti := range jtis {
-		s.redis.Set(ctx, fmt.Sprintf("zosterix:blocklist:refresh:%s", jti), "", 30*24*time.Hour)
+	jtis, err := s.redis.SMembers(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", token.UserID)).Result()
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to get jtist to revoke in redis")
+	} else {
+		for _, jti := range jtis {
+			s.redis.Set(ctx, fmt.Sprintf("zosterix:blocklist:refresh:%s", jti), "", 30*24*time.Hour)
+		}
+		s.redis.Del(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", token.UserID))
 	}
-	s.redis.Del(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", token.UserID))
 
 	return nil
 }
@@ -296,7 +316,9 @@ func (s *Service) ResendVerification(ctx context.Context, email string) error {
 		return err
 	}
 
-	s.redis.Set(ctx, fmt.Sprintf("zosterix:unverified_delete:%s", user.ID), "", 7*24*time.Hour)
+	if err := s.redis.Set(ctx, fmt.Sprintf("zosterix:unverified_delete:%s", user.ID), "", 7*24*time.Hour).Err(); err != nil {
+		log.Warn().Err(err).Msg("failed to set unverified_delete in redis (resend)")
+	}
 	_ = s.email.SendVerificationEmail(user.Email, user.FullName, rawToken)
 
 	return nil
@@ -320,8 +342,10 @@ func (s *Service) HandleGoogleAuth(ctx context.Context, gUser GoogleUser) (strin
 				FullName:         gUser.Name,
 				Role:             "researcher",
 				SupervisorStatus: "none",
-				EmailVerified:    true,
-				GoogleOAuthID:    &gUser.ID,
+				EmailVerified:         true,
+				GoogleOAuthID:         &gUser.ID,
+				NotificationsEnabled:  true,
+				NotificationsPriority: "medium",
 			}
 			if err := s.repo.CreateUser(ctx, user); err != nil {
 				return "", "", false, err
@@ -343,8 +367,11 @@ func (s *Service) HandleGoogleAuth(ctx context.Context, gUser GoogleUser) (strin
 		return "", "", false, err
 	}
 
-	s.redis.SAdd(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", user.ID), jti)
-	s.redis.Expire(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", user.ID), 30*24*time.Hour)
+	if err := s.redis.SAdd(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", user.ID), jti).Err(); err != nil {
+		log.Warn().Err(err).Msg("failed to track google refresh token in redis")
+	} else {
+		s.redis.Expire(ctx, fmt.Sprintf("zosterix:user_refresh_jtis:%s", user.ID), 30*24*time.Hour)
+	}
 
 	profileComplete, _ := s.repo.IsProfileComplete(ctx, user.ID)
 

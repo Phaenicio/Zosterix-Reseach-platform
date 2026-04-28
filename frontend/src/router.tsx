@@ -71,6 +71,22 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: 'settings/emails',
+        element: (
+          <ProtectedRoute>
+            <AccountSettingsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'settings/notifications',
+        element: (
+          <ProtectedRoute>
+            <AccountSettingsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: 'settings/security',
         element: (
           <ProtectedRoute>

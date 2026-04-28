@@ -101,15 +101,23 @@ func (h *Handler) Login(c *gin.Context) {
 
 	h.setRefreshCookie(c, refreshToken)
 
+	var profile *ResearcherProfile
+	if p, err := h.service.repo.GetResearcherProfile(c.Request.Context(), user.ID); err == nil {
+		profile = p
+	}
+
 	shared.OK(c, gin.H{
 		"access_token": accessToken,
 		"user": gin.H{
-			"id":                user.ID,
-			"email":             user.Email,
-			"full_name":         user.FullName,
-			"role":              user.Role,
-			"supervisor_status": user.SupervisorStatus,
-			"profile_complete":  profileComplete,
+			"id":                     user.ID,
+			"email":                  user.Email,
+			"full_name":              user.FullName,
+			"role":                   user.Role,
+			"supervisor_status":      user.SupervisorStatus,
+			"notifications_enabled":  user.NotificationsEnabled,
+			"notifications_priority": user.NotificationsPriority,
+			"profile_complete":       profileComplete,
+			"profile":                profile,
 		},
 	})
 }
@@ -129,15 +137,23 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 
 	h.setRefreshCookie(c, newRefreshToken)
 
+	var profile *ResearcherProfile
+	if p, err := h.service.repo.GetResearcherProfile(c.Request.Context(), user.ID); err == nil {
+		profile = p
+	}
+
 	shared.OK(c, gin.H{
 		"access_token": accessToken,
 		"user": gin.H{
-			"id":                user.ID,
-			"email":             user.Email,
-			"full_name":         user.FullName,
-			"role":              user.Role,
-			"supervisor_status": user.SupervisorStatus,
-			"profile_complete":  profileComplete,
+			"id":                     user.ID,
+			"email":                  user.Email,
+			"full_name":              user.FullName,
+			"role":                   user.Role,
+			"supervisor_status":      user.SupervisorStatus,
+			"notifications_enabled":  user.NotificationsEnabled,
+			"notifications_priority": user.NotificationsPriority,
+			"profile_complete":       profileComplete,
+			"profile":                profile,
 		},
 	})
 }
@@ -148,7 +164,7 @@ func (h *Handler) Logout(c *gin.Context) {
 		_ = h.service.Logout(c.Request.Context(), refreshToken)
 	}
 
-	c.SetCookie("refresh_token", "", -1, "/api/v1/auth/refresh", "", true, true)
+	c.SetCookie("refresh_token", "", -1, "/", "", false, true)
 	shared.OK(c, gin.H{"message": "Logged out successfully"})
 }
 
@@ -164,20 +180,98 @@ func (h *Handler) GetMe(c *gin.Context) {
 
 	profileComplete, _ := h.service.repo.IsProfileComplete(c.Request.Context(), user.ID)
 
+	var profile *ResearcherProfile
+	if p, err := h.service.repo.GetResearcherProfile(c.Request.Context(), user.ID); err == nil {
+		profile = p
+	}
+
 	shared.OK(c, gin.H{
 		"user": gin.H{
-			"id":                user.ID,
-			"email":             user.Email,
-			"full_name":         user.FullName,
-			"role":              user.Role,
-			"supervisor_status": user.SupervisorStatus,
-			"profile_complete":  profileComplete,
+			"id":                     user.ID,
+			"email":                  user.Email,
+			"full_name":              user.FullName,
+			"role":                   user.Role,
+			"supervisor_status":      user.SupervisorStatus,
+			"notifications_enabled":  user.NotificationsEnabled,
+			"notifications_priority": user.NotificationsPriority,
+			"profile_complete":       profileComplete,
+			"profile":                profile,
 		},
 	})
 }
 
+type updateSettingsInput struct {
+	NotificationsEnabled  bool   `json:"notifications_enabled"`
+	NotificationsPriority string `json:"notifications_priority" binding:"required,oneof=low medium high critical"`
+}
+
+func (h *Handler) UpdateUserSettings(c *gin.Context) {
+	userIDStr := c.GetString("user_id")
+	userID, _ := uuid.Parse(userIDStr)
+
+	var input updateSettingsInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		shared.Err(c, http.StatusBadRequest, "invalid_input", err.Error())
+		return
+	}
+
+	if err := h.service.repo.UpdateUserSettings(c.Request.Context(), userID, input.NotificationsEnabled, input.NotificationsPriority); err != nil {
+		shared.Err(c, http.StatusInternalServerError, "internal_error", "Failed to update settings")
+		return
+	}
+
+	shared.OK(c, gin.H{"message": "Settings updated successfully"})
+}
+
+type updateProfileInput struct {
+	FullName          string   `json:"full_name" binding:"required,min=2,max=100"`
+	DisplayName       string   `json:"display_name"`
+	Bio               string   `json:"bio"`
+	Institution       string   `json:"institution"`
+	ResearchInterests []string `json:"research_interests"`
+	GoogleScholar     string   `json:"google_scholar"`
+}
+
+func (h *Handler) UpdateUserProfile(c *gin.Context) {
+	userIDStr := c.GetString("user_id")
+	userID, _ := uuid.Parse(userIDStr)
+
+	var input updateProfileInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		shared.Err(c, http.StatusBadRequest, "invalid_input", err.Error())
+		return
+	}
+
+	// Update Full Name in users table
+	if err := h.service.repo.UpdateUserFullName(c.Request.Context(), userID, input.FullName); err != nil {
+		shared.Err(c, http.StatusInternalServerError, "internal_error", "Failed to update full name")
+		return
+	}
+
+	// Update Profile
+	socialLinks := map[string]interface{}{
+		"scholar": input.GoogleScholar,
+	}
+
+	profile := &ResearcherProfile{
+		UserID:            userID,
+		DisplayName:       &input.DisplayName,
+		Bio:               &input.Bio,
+		Institution:       &input.Institution,
+		ResearchInterests: input.ResearchInterests,
+		SocialLinks:       socialLinks,
+	}
+
+	if err := h.service.repo.UpdateResearcherProfile(c.Request.Context(), profile); err != nil {
+		shared.Err(c, http.StatusInternalServerError, "internal_error", "Failed to update profile")
+		return
+	}
+
+	shared.OK(c, gin.H{"message": "Profile updated successfully"})
+}
+
 func (h *Handler) setRefreshCookie(c *gin.Context, token string) {
-	c.SetCookie("refresh_token", token, int(30*24*time.Hour.Seconds()), "/api/v1/auth/refresh", "", true, true)
+	c.SetCookie("refresh_token", token, int(30*24*time.Hour.Seconds()), "/", "", false, true)
 }
 
 type forgotPasswordInput struct {

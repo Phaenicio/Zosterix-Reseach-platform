@@ -95,6 +95,8 @@ func main() {
 	protected.Use(auth.RequireAuth(config.JWTSecret))
 	{
 		protected.GET("/users/me", authHandler.GetMe)
+		protected.PUT("/users/settings", authHandler.UpdateUserSettings)
+		protected.PUT("/users/profile", authHandler.UpdateUserProfile)
 	}
 
 	// Health check

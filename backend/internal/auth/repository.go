@@ -18,18 +18,34 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 }
 
 type User struct {
-	ID               uuid.UUID
-	Email            string
-	PasswordHash     *string
-	FullName         string
-	Role             string
-	SupervisorStatus string
-	EmailVerified    bool
-	GoogleOAuthID    *string
-	IsSuspended      bool
-	IsBanned         bool
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                    uuid.UUID
+	Email                 string
+	PasswordHash          *string
+	FullName              string
+	Role                  string
+	SupervisorStatus      string
+	EmailVerified         bool
+	GoogleOAuthID         *string
+	IsSuspended           bool
+	IsBanned              bool
+	NotificationsEnabled  bool
+	NotificationsPriority string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+}
+
+type ResearcherProfile struct {
+	UserID            uuid.UUID              `json:"user_id"`
+	DisplayName       *string                `json:"display_name"`
+	Bio               *string                `json:"bio"`
+	Institution       *string                `json:"institution"`
+	ResearchInterests []string               `json:"research_interests"`
+	ProfilePhotoURL   *string                `json:"profile_photo_url"`
+	SocialLinks       map[string]interface{} `json:"social_links"`
+	EmailNotifPrefs   map[string]interface{} `json:"email_notif_prefs"`
+	CoauthorConsent   bool                   `json:"coauthor_consent"`
+	CreatedAt         time.Time              `json:"created_at"`
+	UpdatedAt         time.Time              `json:"updated_at"`
 }
 
 func (r *Repository) CreateUser(ctx context.Context, user *User) error {
@@ -40,13 +56,13 @@ func (r *Repository) CreateUser(ctx context.Context, user *User) error {
 	defer tx.Rollback(ctx)
 
 	query := `
-		INSERT INTO users (email, password_hash, full_name, role, supervisor_status, email_verified, google_oauth_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, created_at, updated_at`
+		INSERT INTO users (email, password_hash, full_name, role, supervisor_status, email_verified, google_oauth_id, notifications_enabled, notifications_priority)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, notifications_enabled, notifications_priority, created_at, updated_at`
 
 	err = tx.QueryRow(ctx, query,
-		user.Email, user.PasswordHash, user.FullName, user.Role, user.SupervisorStatus, user.EmailVerified, user.GoogleOAuthID,
-	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
+		user.Email, user.PasswordHash, user.FullName, user.Role, user.SupervisorStatus, user.EmailVerified, user.GoogleOAuthID, user.NotificationsEnabled, user.NotificationsPriority,
+	).Scan(&user.ID, &user.NotificationsEnabled, &user.NotificationsPriority, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
 		return err
@@ -63,10 +79,10 @@ func (r *Repository) CreateUser(ctx context.Context, user *User) error {
 }
 
 func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*User, error) {
-	query := `SELECT id, email, password_hash, full_name, role, supervisor_status, email_verified, google_oauth_id, is_suspended, is_banned, created_at, updated_at FROM users WHERE email = $1`
+	query := `SELECT id, email, password_hash, full_name, role, supervisor_status, email_verified, google_oauth_id, is_suspended, is_banned, notifications_enabled, notifications_priority, created_at, updated_at FROM users WHERE email = $1`
 	var user User
 	err := r.db.QueryRow(ctx, query, email).Scan(
-		&user.ID, &user.Email, &user.PasswordHash, &user.FullName, &user.Role, &user.SupervisorStatus, &user.EmailVerified, &user.GoogleOAuthID, &user.IsSuspended, &user.IsBanned, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.Email, &user.PasswordHash, &user.FullName, &user.Role, &user.SupervisorStatus, &user.EmailVerified, &user.GoogleOAuthID, &user.IsSuspended, &user.IsBanned, &user.NotificationsEnabled, &user.NotificationsPriority, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -75,10 +91,10 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*User, e
 }
 
 func (r *Repository) GetUserByID(ctx context.Context, id uuid.UUID) (*User, error) {
-	query := `SELECT id, email, password_hash, full_name, role, supervisor_status, email_verified, google_oauth_id, is_suspended, is_banned, created_at, updated_at FROM users WHERE id = $1`
+	query := `SELECT id, email, password_hash, full_name, role, supervisor_status, email_verified, google_oauth_id, is_suspended, is_banned, notifications_enabled, notifications_priority, created_at, updated_at FROM users WHERE id = $1`
 	var user User
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&user.ID, &user.Email, &user.PasswordHash, &user.FullName, &user.Role, &user.SupervisorStatus, &user.EmailVerified, &user.GoogleOAuthID, &user.IsSuspended, &user.IsBanned, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.Email, &user.PasswordHash, &user.FullName, &user.Role, &user.SupervisorStatus, &user.EmailVerified, &user.GoogleOAuthID, &user.IsSuspended, &user.IsBanned, &user.NotificationsEnabled, &user.NotificationsPriority, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -87,10 +103,10 @@ func (r *Repository) GetUserByID(ctx context.Context, id uuid.UUID) (*User, erro
 }
 
 func (r *Repository) GetUserByGoogleID(ctx context.Context, googleID string) (*User, error) {
-	query := `SELECT id, email, password_hash, full_name, role, supervisor_status, email_verified, google_oauth_id, is_suspended, is_banned, created_at, updated_at FROM users WHERE google_oauth_id = $1`
+	query := `SELECT id, email, password_hash, full_name, role, supervisor_status, email_verified, google_oauth_id, is_suspended, is_banned, notifications_enabled, notifications_priority, created_at, updated_at FROM users WHERE google_oauth_id = $1`
 	var user User
 	err := r.db.QueryRow(ctx, query, googleID).Scan(
-		&user.ID, &user.Email, &user.PasswordHash, &user.FullName, &user.Role, &user.SupervisorStatus, &user.EmailVerified, &user.GoogleOAuthID, &user.IsSuspended, &user.IsBanned, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.Email, &user.PasswordHash, &user.FullName, &user.Role, &user.SupervisorStatus, &user.EmailVerified, &user.GoogleOAuthID, &user.IsSuspended, &user.IsBanned, &user.NotificationsEnabled, &user.NotificationsPriority, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -113,6 +129,48 @@ func (r *Repository) UpdatePassword(ctx context.Context, userID uuid.UUID, passw
 func (r *Repository) LinkGoogleAccount(ctx context.Context, userID uuid.UUID, googleID string) error {
 	query := `UPDATE users SET google_oauth_id = $1, updated_at = NOW() WHERE id = $2`
 	_, err := r.db.Exec(ctx, query, googleID, userID)
+	return err
+}
+
+func (r *Repository) UpdateUserSettings(ctx context.Context, userID uuid.UUID, enabled bool, priority string) error {
+	query := `UPDATE users SET notifications_enabled = $1, notifications_priority = $2, updated_at = NOW() WHERE id = $3`
+	_, err := r.db.Exec(ctx, query, enabled, priority, userID)
+	return err
+}
+
+func (r *Repository) UpdateUserFullName(ctx context.Context, userID uuid.UUID, fullName string) error {
+	query := `UPDATE users SET full_name = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.db.Exec(ctx, query, fullName, userID)
+	return err
+}
+
+func (r *Repository) GetResearcherProfile(ctx context.Context, userID uuid.UUID) (*ResearcherProfile, error) {
+	query := `SELECT user_id, display_name, bio, institution, research_interests, profile_photo_url, social_links, email_notif_prefs, coauthor_consent, created_at, updated_at FROM researcher_profiles WHERE user_id = $1`
+	var p ResearcherProfile
+	err := r.db.QueryRow(ctx, query, userID).Scan(
+		&p.UserID, &p.DisplayName, &p.Bio, &p.Institution, &p.ResearchInterests, &p.ProfilePhotoURL, &p.SocialLinks, &p.EmailNotifPrefs, &p.CoauthorConsent, &p.CreatedAt, &p.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (r *Repository) UpdateResearcherProfile(ctx context.Context, p *ResearcherProfile) error {
+	query := `
+		INSERT INTO researcher_profiles (user_id, display_name, bio, institution, research_interests, social_links, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
+		ON CONFLICT (user_id) DO UPDATE SET
+			display_name = EXCLUDED.display_name,
+			bio = EXCLUDED.bio,
+			institution = EXCLUDED.institution,
+			research_interests = EXCLUDED.research_interests,
+			social_links = EXCLUDED.social_links,
+			updated_at = NOW()`
+	
+	_, err := r.db.Exec(ctx, query,
+		p.UserID, p.DisplayName, p.Bio, p.Institution, p.ResearchInterests, p.SocialLinks,
+	)
 	return err
 }
 

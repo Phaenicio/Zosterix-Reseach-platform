@@ -8,7 +8,18 @@ interface User {
   full_name: string;
   role: 'researcher' | 'student' | 'supervisor' | 'administrator';
   supervisor_status: 'none' | 'pending_verification' | 'verified' | 'rejected';
+  notifications_enabled: boolean;
+  notifications_priority: 'low' | 'medium' | 'high' | 'critical';
   profile_complete: boolean;
+  profile?: {
+    display_name?: string;
+    bio?: string;
+    institution?: string;
+    research_interests?: string[];
+    social_links?: {
+      scholar?: string;
+    };
+  };
 }
 
 interface AuthState {
